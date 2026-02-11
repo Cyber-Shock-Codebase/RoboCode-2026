@@ -1,0 +1,165 @@
+package frc.robot.commands;
+
+import static edu.wpi.first.units.Units.Degree;
+import static edu.wpi.first.units.Units.Degrees;
+import static edu.wpi.first.units.Units.Inches;
+import static edu.wpi.first.units.Units.Meters;
+import static edu.wpi.first.units.Units.RPM;
+
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.geometry.Translation3d;
+import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Distance;
+import edu.wpi.first.wpilibj2.command.Command;
+import frc.robot.subsystems.ShooterSubsystem;
+import frc.robot.subsystems.swervedrive.*;
+import swervelib.SwerveDrive;
+import yams.mechanisms.swerve.utility.SwerveInputStream;
+
+import java.util.Map;
+import java.util.function.Supplier;
+import java.util.function.ToDoubleBiFunction;
+
+public class ShootOnTheMoveCommand extends Command {
+  private final SwerveSubsystem drivetrain;
+ private final ShooterSubsystem Shooter;
+  private Supplier<Translation3d> aimPointSupplier; // The point to aim at
+  private final SwerveInputStream inputStream;
+  private AngularVelocity latestShootSpeed;
+  private Angle latestHoodAngle;
+  private Angle latestTurretAngle;
+
+  public ShootOnTheMoveCommand(
+      SwerveInputStream inputStream,
+      SwerveSubsystem drivetrain,
+      ShooterSubsystem shooter,
+      Supplier<Translation3d> aimPointSupplier) {
+    this.inputStream = inputStream;
+    this.drivetrain = drivetrain;
+    this.Shooter = shooter;
+    this.aimPointSupplier = aimPointSupplier;
+  }
+
+  @Override
+  public void initialize() {
+    super.initialize();
+
+    latestHoodAngle = Degrees.of(28);
+    latestTurretAngle = Degrees.of(0);
+    latestShootSpeed = Shooter.getVelocity();
+  }
+
+  @Override
+  public boolean isFinished() {
+    return false;
+  }
+
+  @Override
+  public void execute() {
+// Calculate trajectory to aimPoint
+var target = aimPointSupplier.get();
+
+var shooterLocation =
+    new Translation3d(drivetrain.getPose().getX(), drivetrain.getPose().getY(), 0)
+        .plus(new Translation3d(0, 5.718, 16.393));
+// Ignore this parameter for now, the range tables will account for it :/
+// var deltaH = target.getMeasureZ().minus(shooterLocation.getMeasureZ());
+var shooterOnGround = new Translation2d(shooterLocation.getX(), shooterLocation.getY());
+var targetOnGround = new Translation2d(target.getX(), target.getY());
+
+    var distanceToTarget = Meters.of(shooterOnGround.getDistance(targetOnGround));
+
+    // Get time of flight. We could try to do this analytically but for now it's
+    // easier and more realistic
+    // to use a simple linear approximation based on empirical data.
+    double timeOfFlight = getFlightTime(distanceToTarget);
+
+    // Calculate corrective vector based on our current velocity multiplied by time
+    // of flight.
+    // If we're stationary, this should be zero. If we're backing up, this will be
+    // "ahead" of the target, etc.
+    var updatedPosition = drivetrain.getFieldVelocity().times(timeOfFlight);
+    var correctiveVector =
+        new Translation2d(updatedPosition.vxMetersPerSecond, updatedPosition.vyMetersPerSecond)
+            .unaryMinus();
+    var correctiveVector3d = new Translation3d(correctiveVector.getX(), correctiveVector.getY(), 0);
+
+    // Logger.recordOutput("FieldSimulation/AimTargetCorrected",
+    //     new Pose3d(target.plus(correctiveVector3d), Rotation3d.kZero));
+
+    var correctedTarget = targetOnGround.plus(correctiveVector);
+
+    var vectorToTarget = drivetrain.getPose().getTranslation().minus(correctedTarget);
+
+    var correctedDistance = Meters.of(vectorToTarget.getNorm());
+    var calculatedHeading =
+        vectorToTarget.getAngle().rotateBy(drivetrain.getHeading()).getMeasure();
+    // .minus(Degrees.of(180)); // .unaryminus
+
+    // Logger.recordOutput("ShootOnTheMove/RobotHeading", drivetrain.getHeading());
+    // Logger.recordOutput("ShootOnTheMove/CalculatedHeading", calculatedHeading);
+    // Logger.recordOutput("ShootOnTheMove/distanceToTarget", distanceToTarget);
+
+    latestTurretAngle = calculatedHeading;
+    latestShootSpeed = calculateRequiredShooterSpeed(correctedDistance);
+
+    // TODO: add this back if/when we have a real hood, for now, just set it to the
+    // current angle
+    // latestHoodAngle = calculateRequiredHoodAngle(correctedDistance);
+    latestHoodAngle = Degrees.of(0);
+    
+
+    Shooter.setVelocity(latestShootSpeed);
+     var originalSpeed     = this.inputStream.get();
+    drivetrain.drive(new Translation2d(originalSpeed.vxMetersPerSecond, originalSpeed.vyMetersPerSecond), 0, false);
+    // SmartDashboard.putNumber("shoot speed", latestShootSpeed);
+    // SmartDashboard.putNumber("target angle", latestTurretAngle);
+    // SmartDashboard.putBoolean("Encoder A Raw", rotorSeededFromAbs);
+
+    // System.out.println("Shooting at distance: " + correctedDistance + " requires
+    // speed: " + latestShootSpeed
+    // + ", hood angle: " + latestHoodAngle + ", turret angle: " +
+    // latestTurretAngle);
+  }
+
+  private double getFlightTime(Distance distanceToTarget) {
+    // Simple linear approximation based on empirical data.
+    return TIME_OF_FLIGHT_BY_DISTANCE.get(distanceToTarget.in(Meters));
+  }
+
+  private AngularVelocity calculateRequiredShooterSpeed(Distance distanceToTarget) {
+    return RPM.of(SHOOTING_SPEED_BY_DISTANCE.get(distanceToTarget.in(Meters)));
+  }
+
+  private Angle calculateRequiredHoodAngle(Distance distanceToTarget) {
+    return Degrees.of(HOOD_ANGLE_BY_DISTANCE.get(distanceToTarget.in(Meters)));
+  }
+
+  // meters, seconds
+  private static final InterpolatingDoubleTreeMap TIME_OF_FLIGHT_BY_DISTANCE =
+      InterpolatingDoubleTreeMap.ofEntries(Map.entry(1.0, 1.0), Map.entry(4.86, 1.5));
+  // Distance in meters, time in seconds
+  // TODO: add more data points here.
+  // CLOSE: NEED
+  // MID: maybe good enough
+  // FAR: NEED
+
+  // meters, RPS
+  private static final InterpolatingDoubleTreeMap SHOOTING_SPEED_BY_DISTANCE =
+      InterpolatingDoubleTreeMap.ofEntries(
+          Map.entry(Inches.of(88).in(Meters), 5800.0),
+          Map.entry(Inches.of(101).in(Meters), 6300.0),
+          Map.entry(Inches.of(133).in(Meters), 7050.0),
+          Map.entry(Inches.of(166).in(Meters), 7900.0),
+          Map.entry(Inches.of(209).in(Meters), 8600.0));
+
+  // meters, degrees
+  private static final InterpolatingDoubleTreeMap HOOD_ANGLE_BY_DISTANCE =
+      InterpolatingDoubleTreeMap.ofEntries(
+          Map.entry(1.0, 15.0), Map.entry(2.0, 30.0), Map.entry(3.0, 45.0));
+}
