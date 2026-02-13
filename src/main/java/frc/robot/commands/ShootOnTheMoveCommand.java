@@ -25,6 +25,7 @@ import edu.wpi.first.units.measure.AngularAcceleration;
 import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.Distance;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.subsystems.swervedrive.SwerveSubsystem;
 import frc.robot.Constants.OperatorConstants;
 import frc.robot.subsystems.ShooterSubsystem;
@@ -55,6 +56,7 @@ public class ShootOnTheMoveCommand extends Command {
   private final Angle                      setpointTolerance   = Degrees.of(0);
   private final AngularVelocity            maxProfiledVelocity = RotationsPerSecond.of(60);
   private final AngularAcceleration    maxProfiledAcceleration = RotationsPerSecondPerSecond.of(60);
+  private static AngularVelocity targetShootSpeed = RPM.of(1000);
 
   private final ProfiledPIDController  pidController           = new ProfiledPIDController(1.5,
                                                                                            0,
@@ -170,19 +172,21 @@ public class ShootOnTheMoveCommand extends Command {
     //         List.of(),
     //         new Pose2d(correctedTarget.getX(), correctedTarget.getY(), drivetrain.getHeading()),
     //         new TrajectoryConfig(Units.feetToMeters(3.0), Units.feetToMeters(3.0))));
-;
 
     latestWindage = calculatedHeading;
     latestShootSpeed = calculateRequiredShooterSpeed(correctedDistance);
+    targetShootSpeed = calculateRequiredShooterSpeed(correctedDistance);
 
     // TODO: add this back if/when we have a real hood, for now, just set it to the
     // current angle
     // latestHoodAngle = calculateRequiredHoodAngle(correctedDistance);
     HoodAngle = Degrees.of(28);
 
-    // Use the computed required shooter speed instead of a hard-coded value
-    shooter.setset();
-    System.out.println(shooter.getVelocity());
+    // Set the shooter speed to the calculated values
+    shooter.setVelocity(targetShootSpeed);
+
+    // Set the robot's heading to the turret angle 
+    System.out.println(shooter.getVelocity() + " is the current shooter speed");
     var output = pidController.calculate(drivetrain.getHeading().getRadians(),
                                          new State(calculatedHeading.magnitude(), 0));
     var feedforwardOutput = feedforward.calculate(pidController.getSetpoint().velocity);
@@ -210,9 +214,16 @@ public class ShootOnTheMoveCommand extends Command {
      + " requires speed: " + latestShootSpeed
      + ", turret angle: " + drivetrain.getHeading()
      + ", target angle:" + calculatedHeading
-     + Math.cos(latestWindage.magnitude())
-     + Math.sin(latestWindage.magnitude())
+    //  + Math.cos(latestWindage.magnitude())
+    //  + Math.sin(latestWindage.magnitude())
      );
+  }
+
+  public AngularVelocity getTargetShootSpeed() {
+    // This is a placeholder implementation. In a real implementation, you would
+    // want to store the latest calculated shooter speed in a way that this method
+    // can access it.
+    return targetShootSpeed;
   }
 
   private double getFlightTime(Distance distanceToTarget) {

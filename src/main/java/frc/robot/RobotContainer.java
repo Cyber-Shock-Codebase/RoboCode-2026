@@ -28,6 +28,8 @@ import frc.robot.subsystems.swervedrive.SwerveSubsystem;
 import java.io.File;
 import java.io.InputStream;
 import static edu.wpi.first.units.Units.RPM;
+import static edu.wpi.first.units.Units.RotationsPerSecond;
+
 
 import swervelib.SwerveInputStream;
 import frc.robot.commands.ShootOnTheMoveCommand;
@@ -177,7 +179,6 @@ public class RobotContainer
       driverXbox.button(2).whileTrue(Commands.runEnd(() -> driveDirectAngleKeyboard.driveToPoseEnabled(true),
                                                      () -> driveDirectAngleKeyboard.driveToPoseEnabled(false)));
       driverXbox.rightBumper().whileTrue(new ShootOnTheMoveCommand(drivebase, driveDirectAngle, Shooter, new Translation3d(4.611624,4.021328,1.8288)));
-      driverXbox.leftBumper().whileTrue(Shooter.setset());
 
 //      driverXbox.b().whileTrue(
 //          drivebase.driveToPose(

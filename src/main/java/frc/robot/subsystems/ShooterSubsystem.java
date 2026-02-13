@@ -65,7 +65,7 @@ public class ShooterSubsystem extends SubsystemBase {
   // Maximum speed of the shooter.
   .withUpperSoftLimit(RPM.of(10000))
   // Minimum speed of the shooter (to maintain flywheel energy).
-  .withLowerSoftLimit(RPM.of(250))
+  .withLowerSoftLimit(RPM.of(0))
   // Telemetry name and verbosity for the arm.
   .withTelemetry("ShooterMech", TelemetryVerbosity.HIGH);
 
@@ -86,6 +86,7 @@ public class ShooterSubsystem extends SubsystemBase {
    * @return {@link edu.wpi.first.wpilibj2.command.RunCommand}
    */
   public Command setVelocity(AngularVelocity speed) {return shooter.setSpeed(speed);}
+
 
   public Command setset() {return shooter.setSpeed(RPM.of(2000));}
 
